@@ -33,15 +33,15 @@ class LapSolver:
 
     - `cost_limit`: thresholds the distances. Any link with a cost above `cost_limit` is discarded; a node
       with no remaining link is left unmatched.
-    - `alternative_cost`: the cost of an alternative "sink" link, i.e. of leaving a row/column unmatched. A
-      node is matched only when its best remaining link is cheaper than this. With `alternative_cost=inf`
-      no alternative is offered (a node is left unmatched only when it has no remaining link).
+    - `alternative_cost`: a finite value `eta` charges `eta / 2` per unmatched row or column.
+      The solver minimizes total link and penalty costs; tied optima may differ.
+      `alternative_cost=inf` disables the finite penalty.
 
-    By definition, `alternative_cost` superseds `cost_limit` as it prevents any link with higher cost.
+    `cost_limit` still forbids links. Matching at `alternative_cost` ties rejection in exact arithmetic.
 
     So `solve(dist)` is a plain full assignment, `solve(dist, cost_limit=eta)` discards links above `eta`
-    (matching as many of the rest as possible), and `solve(dist, alternative_cost=eta)` lets a node stay
-    unmatched at cost `eta`. Backends that cannot apply these (or take rectangular input) natively are
+    (matching as many of the rest as possible), and `solve(dist, alternative_cost=eta)` charges `eta / 2`
+    per unmatched row and column. Backends that cannot apply these (or take rectangular input) natively are
     handled by rewriting the cost matrix via the extensions below.
 
     Output: links
@@ -67,22 +67,12 @@ class LapSolver:
     per backend; where a backend applies a cost limit, alternative cost or rectangular input natively,
     that native path is used by default.
     `enforce_less_row_than_col` (default True) transposes the problem internally so there are fewer rows
-    than columns, which is faster for several backends and never changes the result.
+    than columns, which preserves the objective but may change tied assignments.
 
     Time performances
     -----------------
 
-    From the `benchmark` studies:
-
-    - `laprust` is the best general-purpose default: fastest (or tied) both for plain assignment and with
-      an alternative cost (its native cost limit avoids any dense rewrite).
-    - Its one weak spot is a dense problem that only sets a cost limit (`alternative_cost=inf`), where it
-      degrades at scale. For such discarded-link / sparse problems prefer a sparse backend (`csgraph` or
-      `lapmod`); `scipy` is a decent dense fallback.
-    - `lap` and `scipy` are competitive for plain assignment but much slower once a cost extension
-      is involved; `lapsolver` is consistently the slowest; `lapjv` is slow and can return wrong
-      assignments on cost-limited / inf-heavy problems.
-    - Sparse backends carry a small constant overhead, so they only pay off from a few hundred nodes up.
+    Rankings depend on workload and installed backends. See `benchmark/benchmark.md` for results.
 
     Attributes:
         implementations (dict[str, str]): Supported dense backends, mapping name -> importable module.
@@ -208,14 +198,11 @@ class LapSolver:
 
         - `cost_limit`: links with a cost above it are forbidden; a node with no admissible link is left
           unmatched.
-        - `alternative_cost`: the cost of leaving a node unmatched. A node is matched only when its best
-          admissible link is cheaper than this. Nodes with admissible links lower than this alternative cost
-          can also be skipped if they induce larger cost in the global assignment.
-
-        By definition, `alternative_cost` superseds `cost_limit` as it prevents any link with higher cost.
+        - `alternative_cost`: a finite value `eta` charges `eta / 2` per unmatched row or column.
+          The solver minimizes total link and penalty costs; tied optima may differ.
 
         Common uses: `solve(dist)` (full assignment), `solve(dist, cost_limit=eta)` (discard links above
-        `eta`), `solve(dist, alternative_cost=eta)` (a node may stay unmatched at cost `eta`).
+        `eta`), `solve(dist, alternative_cost=eta)` (`eta / 2` per unmatched row and column).
 
         Rectangular matrices and `inf` entries are handled transparently: `inf` (and above-`cost_limit`)
         entries are replaced internally by a large finite sentinel, the matrix is squared with
@@ -229,8 +216,7 @@ class LapSolver:
             eta (float | None): Deprecated. The former alternative threshold. If given, it is mapped to
                 `alternative_cost=eta` (and a `DeprecationWarning` is emitted). Default: None (unused).
             cost_limit (float): Maximum admissible link cost. Default: inf (no cutoff).
-            alternative_cost (float): Cost of leaving a row/column unmatched. Default: inf (a node is left
-                unmatched only when it has no admissible link).
+            alternative_cost (float): Half this value per unmatched endpoint; inf (default) disables it.
 
         Returns:
             np.ndarray: Chosen links as (i, j) pairs; row i is matched to column j at cost dist[i, j].
@@ -308,7 +294,7 @@ class LapSolver:
         `cost_limit` and `alternative_cost` mean exactly what they do in `solve`. Entries above
         min(`cost_limit`, `alternative_cost`) are dropped to build the sparse matrix, so a finite limit
         is what makes the problem sparse (or pass an already-sparse `dist`, whose stored entries are taken
-        as the remaining links). A finite `alternative_cost` adds an alternative sink link at that cost.
+        as the remaining links). A finite `alternative_cost` charges half its value per unmatched endpoint.
         `alternative_cost=inf` offers no alternative.
 
         Without an alternative cost, a sparse problem can be infeasible (a row with no remaining link),
@@ -333,8 +319,7 @@ class LapSolver:
                 Default: None.
             cost_limit (float): Links above this are discarded.
                 Default: inf.
-            alternative_cost (float): Cost of an alternative sink link (leaving a node unmatched); inf
-                offers no alternative. Default: inf.
+            alternative_cost (float): Half this value per unmatched endpoint; inf (default) disables it.
             assume_feasible (bool): Skip the feasibility sink extension; valid only when `alternative_cost`
                 is inf and a full matching exists within `cost_limit`. Default: False.
 

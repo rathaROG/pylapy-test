@@ -68,7 +68,7 @@ solver = pylapy.LapSolver()  # auto-pick the fastest installed backend
 
 links = solver.solve(dist)  # full assignment -> (L, 2) array of matched (row, col)
 links = solver.solve(dist, cost_limit=0.1)  # forbid links above 0.1
-links = solver.solve(dist, alternative_cost=0.1)  # a row/column may stay unmatched at cost 0.1
+links = solver.solve(dist, alternative_cost=0.1)  # 0.05 per unmatched row or column
 links = solver.sparse_solve(dist, cost_limit=0.1)  # same, solved sparsely (needs scipy + numba)
 
 cost = dist[links[:, 0], links[:, 1]].sum()
@@ -95,11 +95,11 @@ are then left **unlinked** and simply do not appear in the output. A node is lef
 
 - all of its available links are *infeasible* — a cost of `inf`, or above `cost_limit`; a node with no
   available (after competition with other nodes) feasible link stays unmatched, or
-- an `alternative_cost` makes leaving it unmatched cheaper than any of its links.
+- a finite `alternative_cost` favors leaving it unmatched in the global optimum.
 
 Internally pylapy makes these cases solvable by rewriting the cost matrix (see *How it works*): `inf` /
 above-limit costs are replaced by a large finite sentinel, and an `alternative_cost` adds "sink"
-rows/columns priced at that cost. Any link the backend returns onto a sentinel value or a sink node is
+rows/columns representing the unmatched penalties described below. Any link onto a sentinel or sink is
 discarded before returning — which is exactly why those rows/columns come back unlinked.
 
 ## How it works
@@ -108,13 +108,12 @@ discarded before returning — which is exactly why those rows/columns come back
 
 - **`cost_limit`** — thresholds the distances. Any link with a cost above `cost_limit` is discarded; a node
   left with no admissible link stays unmatched.
-- **`alternative_cost`** — the cost of an *alternative "sink" link*, i.e. of leaving a row/column unmatched.
-  A node is matched only when its inclusion does not increase the global score by more than this limit. With
-  `alternative_cost=inf` no alternative is offered (a node is left unmatched only when it has no admissible link).
+- **`alternative_cost`** — a finite value $\eta$ charges $\eta/2$ per unmatched row or column.
+  The solver minimizes link costs plus these penalties; `inf` disables the finite penalty.
 
 So `solve(dist)` is a plain full assignment, `solve(dist, cost_limit=eta)` keeps only links with cost
-$\le \eta$ (matching as many of the rest as possible), and `solve(dist, alternative_cost=eta)` lets a node
-stay unmatched at cost $\eta$.
+$\le \eta$ (matching as many of the rest as possible), and `solve(dist, alternative_cost=eta)` charges
+$\eta/2$ per unmatched row and column.
 
 Backends that cannot take rectangular input or apply these natively are handled by **rewriting the cost
 matrix**: a *shape extension* pads it to a square matrix, a *cost extension* adds sink rows/columns, and a

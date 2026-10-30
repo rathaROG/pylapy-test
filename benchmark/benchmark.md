@@ -9,19 +9,33 @@ to prefer overall (method comparison).
 > are noisy (few repeats), so read the **trends and crossovers**, not the absolute
 > milliseconds. Benchmark your own problem if performance is critical.
 
+## Saved results
+
+The cost-extension results (30 October 2026) have **2,923 passing settings**,
+**180 unsupported combinations**, and no objective mismatches. They use Windows,
+Python 3.11.17, NumPy 2.4.6, SciPy 1.17.1 and LAPX 0.13.0, with seed `20261030`,
+three matrices and three repeats per configuration. See the
+[metadata](results/cost_extension.metadata.json) for settings and the result hash.
+
+The SciPy `fill_row_pad_zero` point at `n=20`, square/ungated, was rerun once on
+its three original matrices; the final data combine that rerun with the main session.
+Only the cost-extension study was rerun. Other studies retain existing measurements
+whose runtime and input seeds are unknown. Labels map to `methods.py`;
+`laprust` calls LAPX's `lap.lapjvr`.
+
 ## Reproduce
 
 ```bash
 uv sync --all-extras --dev
 
 # One study at a time: run the driver, then its plotter.
-uv run python -m benchmark_v2.benchmark_shape_extension   && uv run python -m benchmark_v2.plot_shape_extension
-uv run python -m benchmark_v2.benchmark_cost_extension    && uv run python -m benchmark_v2.plot_cost_extension
-uv run python -m benchmark_v2.benchmark_sparse_extension  && uv run python -m benchmark_v2.plot_sparse_extension
-uv run python -m benchmark_v2.benchmark_method_comparison && uv run python -m benchmark_v2.plot_method_comparison
+uv run python -m benchmark.benchmark_shape_extension   && uv run python -m benchmark.plot_shape_extension
+uv run python -m benchmark.benchmark_cost_extension    && uv run python -m benchmark.plot_cost_extension
+uv run python -m benchmark.benchmark_sparse_extension  && uv run python -m benchmark.plot_sparse_extension
+uv run python -m benchmark.benchmark_method_comparison && uv run python -m benchmark.plot_method_comparison
 ```
 
-Each driver writes a flat JSON to `results/` and each plotter writes PNGs to `images/<study>/<data>/`.
+Each driver writes new JSON measurements to `results/`; plotters write SVGs to `images/<study>/<data>/`.
 The backends are wrapped directly in `methods.py` (`solve_scipy`, `solve_lap`, `solve_lapjv`,
 `solve_lapsolver`, `solve_laprust`, `solve_csgraph`, `solve_lapmod`).
 
@@ -35,8 +49,8 @@ The backends are wrapped directly in `methods.py` (`solve_scipy`, `solve_lap`, `
   $s = 0.9$ / $1.1$ means rectangular.
 - **Sizes** $n$ from 5 to 5000 (log-spaced), several random matrices per size, each combo timed $k$ times
   and averaged.
-- **Correctness** — every combo's result is checked against a scipy reference objective; a mismatch beyond a
-  small tolerance is a real error (equal-cost ties are ignored).
+- **Checks** — shape studies compare achieved cost; method comparison also checks link count.
+  Cost extension checks the penalized objective below. Tolerance checks do not prove exact optimality.
 - Everything runs with `enforce_small_row=True` (transpose so there are fewer rows than columns — faster for
   several backends, never changes the result), and a **per-combo early-stop**: once a combo's mean time
   exceeds a budget it is dropped for larger $n$ (so a curve ending early = that combo got too slow).
@@ -46,11 +60,7 @@ The backends are wrapped directly in `methods.py` (`solve_scipy`, `solve_lap`, `
 A rectangular problem must be squared (or solved natively). We compare `no_shape_extension` (let the backend
 handle it), the two `smallest_fill_*` paddings and the four `sum_*` paddings.
 
-**Findings.** Every backend now accepts rectangular input natively (via lapx / scipy), and that internal path
-(`no_shape_extension`) is on par with or faster than any explicit padding — so it is the default everywhere.
-If you must pad explicitly, `smallest_fill_zero` (0-fill) is the fastest and the **only safe** choice: the
-inf-filled variants (`smallest_fill_inf`, `sum_*`) are slower **and** make `lapjv` return *wrong* assignments
-(it mishandles the large inf sentinel).
+**Saved observations.** Cost checks pass; performance depends on layout and input. Defaults are listed below.
 
 | laprust | scipy |
 | --- | --- |
@@ -58,16 +68,15 @@ inf-filled variants (`smallest_fill_inf`, `sum_*`) are slower **and** make `lapj
 
 ## 2. Cost extension — alternative cost (sink nodes)
 
-To leave a node unmatched at cost $\eta$, we add sink rows/columns. There are 11 equivalent layouts (plus
-`no_cost_extension`, i.e. the backend's native cost limit). They give the same optimum but differ in speed
-and robustness.
+An alternative cost $\eta$ charges $\eta/2$ per unmatched row or column. For $K$ pairs:
 
-**Findings.** `diag_row_pad_zero` is the fast, robust default for `scipy`, `lap` and `lapjv`
-(`fill_row_pad_zero` is on par with its diag counter part). `laprust` has a **native** cost limit and is fastest with
-`no_cost_extension` — by a wide margin. `lapsolver` prefers the split layouts (`diag_split_sparse`). Avoid
-the `*_pad_inf` variants with `lapjv`: they are slower and make it return wrong assignments.
+$$F_\eta(A)=\sum_{(i,j)\in A} C_{ij}+\frac{\eta}{2}(n+m-2K).$$
 
-| laprust (native wins) | scipy (`diag_row_pad_zero`) |
+The 11 sink layouts and native `no_cost_extension` represent this objective, with different runtimes.
+Defaults are `diag_row_pad_zero` for SciPy/lap/lapjv, `diag_split_sparse` for lapsolver, and native limits
+for laprust. The plots use the corrected run described above.
+
+| laprust | scipy (`diag_row_pad_zero`) |
 | --- | --- |
 | ![laprust cost](images/cost_extension/experimental/laprust__sq1.0_gatedFalse.svg) | ![scipy cost](images/cost_extension/experimental/scipy__sq1.0_gatedFalse.svg) |
 
@@ -76,9 +85,8 @@ the `*_pad_inf` variants with `lapjv`: they are slower and make it return wrong 
 The sparse backends need a sparse, fully-linkable matrix. We compare the three extensions in `pylapy.sparse`,
 for both an alternative cost (`hard=False`) and a pure threshold (`hard=True`).
 
-**Findings.** `csgraph` (scipy) handles rectangular matrices and is fastest with `diag_row_no_pad`. `lapmod`
-only solves square matrices, so it must use `diag_split_sparse`. Both are correct, and sparse solving is usually
-much faster than dense cost extension on thresholded problems.
+**Saved observations.** `csgraph` uses `diag_row_no_pad`; square-only `lapmod` uses `diag_split_sparse`.
+Successful sparse records pass their checks; 120 combinations are unsupported. Rankings depend on workload.
 
 | csgraph (`diag_row_no_pad`) | lapmod (`diag_split_sparse`) |
 | --- | --- |
@@ -94,22 +102,17 @@ three shapes:
 - **alternative** — an alternative cost,
 - **gated_alternative** — gated + alternative cost.
 
-**Findings (at $n = 1000$, the reliable range).**
+**Saved `laprust` means at $n=1000$ (ms; not rerun):**
 
-- **full**: `laprust` is fastest (~6 ms), then `scipy` (~12 ms), with `lap`/`lapjv` behind (~50 ms) and
-  `lapsolver` the slowest (~135 ms); any dense backend is fine.
-- **alternative**: `laprust` (~1.3 ms) and the sparse backends (`lapmod`/`csgraph`, ~3.5 ms) dominate; the
-  other dense backends (`lap`/`lapjv` ~13 ms, `scipy` ~21 ms) are ~5–15× slower, and `lapsolver`
-  is far worse (~0.6 s).
-- **gated** (cost limit, no alternative): the sparse backends win big (`csgraph`/`lapmod` ~4–5 ms, `scipy`
-  ~5.5 ms) while `laprust`/`lap`/`lapjv` degrade badly at scale (~150–220 ms). We note that a non-default
-  shape extension (e.g. `smalless_fill_inf`) may avoid this degradation specifically for gated rectangular problems.
-- `lapsolver` is the slowest across the board on thresholded problems; `lapjv` can also return slightly
-  sub-optimal costs there.
+| Configuration | $s=0.9$ | $s=1.0$ | $s=1.1$ |
+| --- | ---: | ---: | ---: |
+| full | 1.028 | 9.018 | 3.178 |
+| gated | 1.273 | 7.574 | 3.168 |
+| alternative | 0.613 | 0.970 | 2.370 |
+| gated_alternative | 0.569 | 1.146 | 2.323 |
 
-**Recommendation.** Use `laprust` as the dense default (great for plain assignment and for an alternative
-cost via its native limit); use `sparse_solve` (`csgraph` or `lapmod`) whenever the problem is thresholded
-or sparse.
+SciPy (5.578 ms) and `csgraph` (3.581 ms) beat laprust on the square gated case.
+Rankings vary by shape and threshold; benchmark your own workload.
 
 ### full
 | $s = 0.9$ | $s = 1.0$ | $s = 1.1$ |
@@ -133,8 +136,7 @@ or sparse.
 
 ## Chosen defaults
 
-These studies set pylapy's per-backend defaults (`DEFAULT_SHAPE_EXTENSIONS`, `DEFAULT_COST_EXTENSIONS` in
-`src/pylapy/*_extension.py`, `DEFAULT_SPARSE_EXTENSIONS` in `src/pylapy/sparse.py`):
+Configured defaults (`DEFAULT_SHAPE_EXTENSIONS`, `DEFAULT_COST_EXTENSIONS`, `DEFAULT_SPARSE_EXTENSIONS`):
 
 | backend | rectangular (shape) | alternative cost (cost) | sparse |
 | --- | --- | --- | --- |
@@ -145,3 +147,11 @@ These studies set pylapy's per-backend defaults (`DEFAULT_SHAPE_EXTENSIONS`, `DE
 | `laprust` | internal | internal (`no_cost_extension`) | — |
 | `csgraph` (sparse) | — | — | `diag_row_no_pad` |
 | `lapmod` (sparse) | — | — | `diag_split_sparse` |
+
+The method-comparison driver uses `smallest_fill_zero` for `lapjv`, unlike the library default above.
+
+Objective regression checks:
+
+```bash
+python -B -m unittest benchmark.test_core -v
+```

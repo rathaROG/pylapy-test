@@ -4,8 +4,8 @@ The Linear Assignment Problem matches the rows and columns of a cost matrix one-
 the total cost. Several fast solvers exist in the Python ecosystem; `pylapy` wraps them behind a single
 class, `LapSolver`, so you can switch backend -- or let it auto-pick the fastest installed one -- without
 changing your code. On top of the raw solvers it adds what real problems need: rectangular matrices, `inf`
-(impossible) entries, a `cost_limit` to discard over-long links, and an `alternative_cost` for leaving a
-row/column unmatched.
+(impossible) entries, a `cost_limit` to discard over-long links, and an `alternative_cost` that charges
+half its value for each unmatched row and each unmatched column.
 
 Backends
 --------
@@ -24,7 +24,7 @@ Example:
     >>> dist = np.random.default_rng(0).random((2000, 1800))
     >>> solver = pylapy.LapSolver()  # auto-pick the fastest installed backend
     >>> links = solver.solve(dist)  # (L, 2) array of matched (row, col) pairs
-    >>> links = solver.solve(dist, alternative_cost=0.1)  # a node may stay unmatched at cost 0.1
+    >>> links = solver.solve(dist, alternative_cost=0.1)  # 0.05 per unmatched row or column
     >>> links = solver.sparse_solve(dist, cost_limit=0.1)  # drop links above 0.1 and solve sparsely
     >>> cost = dist[links[:, 0], links[:, 1]].sum()
 

@@ -1,8 +1,7 @@
 """Cost Extension Benchmark: What is the best cost-extension strategy per backend?
 
-A soft threshold lets a row/column stay *unmatched* at cost ``eta``. Backends can't do that directly, so
-pylapy rewrites the cost matrix by adding "sink" rows/cols (a cost extension) -- or, for some backends,
-relies on a native ``cost_limit``. This compares pylapy's cost extensions (plus the native option when it
+Each unmatched row or column costs ``eta / 2``. Pylapy adds sink rows/columns or uses native
+``cost_limit`` support. This compares cost extensions and the native option (when it
 exists) per backend.
 
 For every backend we measure, across a size sweep, every cost extension (``none`` + the 11 in
@@ -14,8 +13,8 @@ extension is needed. We check every extension reaches the same soft objective as
 Results are written to JSON for ``plot_cost_extension.py``.
 
 Run:
-    uv run python -m benchmark_v2.benchmark_cost_extension
-    uv run python -m benchmark_v2.benchmark_cost_extension --sizes 5,10,50 --samples 2 --repeats 3
+    uv run python -m benchmark.benchmark_cost_extension
+    uv run python -m benchmark.benchmark_cost_extension --sizes 5,10,50 --samples 2 --repeats 3
 """
 
 from __future__ import annotations
@@ -44,8 +43,7 @@ GATED = [False, True]
 REFERENCE_EXTENSION = cost_ext.fill_row_pad_zero
 
 # Cost-match tolerance. Equally-optimal assignments reached via a different extension sum to the same soft
-# objective but differ by a few ULPs in float (~1e-15); genuine suboptimal results (e.g. lapjv on
-# inf-containing extensions) differ by >=1e-3. This silences the former, catches the latter.
+# objective but may differ through rounding. Tolerance-based agreement does not prove exact optimality.
 RTOL = 1e-6
 ATOL = 1e-9
 

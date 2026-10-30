@@ -1,20 +1,14 @@
 """Cost extension functions to add an alternative non-linking cost.
 
 A cost extension adds "sink" rows and columns to the distance matrix (also squaring it). Linking a true
-row/column to a sink means leaving it unassigned, at the alternative cost `eta`. This lets a node stay
-unmatched instead of being forced into an expensive link. The many layouts below are equivalent (they
-yield the same optimal links) but differ in runtime and numerical robustness.
+row/column to a sink leaves it unassigned. The objective charges `eta / 2` per unmatched row or column.
+Layouts represent the same objective up to a constant; ties may return different links.
 
-Which one to use (see the `benchmark_cost_extension.py` script and `DEFAULT_COST_EXTENSIONS`):
+Configured defaults (see `benchmark/benchmark.md`):
 
-- `laprust` has a native alternative cost and is fastest with `no_cost_extension` (no explicit sink
-  nodes), by a wide margin.
-- `scipy`, `lap`, `lapjv`: `diag_row_pad_zero` is the fast, robust default (its `fill_row_pad_zero`
-  twin is equivalent and roughly as fast).
-- `lapsolver`: the `diag_split_sparse` is best.
-
-Avoid the `*_pad_inf` variants with `lapjv`: they are slower and make that backend return wrong
-assignments (it seems to mishandle the inf sentinel). The `*_pad_zero` variants are safe everywhere.
+- `laprust`: `no_cost_extension` (native limit).
+- `scipy`, `lap`, `lapjv`: `diag_row_pad_zero`.
+- `lapsolver`: `diag_split_sparse`.
 
 Each function follows `CostExtensionProtocol` and is registered by name in `COST_EXTENSIONS`.
 """
@@ -27,9 +21,8 @@ import numpy as np
 class CostExtensionProtocol(Protocol):
     """Callable that adds alternative-cost sink nodes to a distance matrix.
 
-    It receives the distance matrix, the alternative cost `eta` (the cost of leaving a node unmatched) and
-    the `inf` sentinel value, and returns a square extended matrix; links to sink nodes are stripped from
-    the result by the solver.
+    `eta / 2` is the penalty per unmatched row or column. Explicit extensions return a square
+    matrix; the native extension returns the input. The solver removes sink links.
     """
 
     __name__: str
@@ -41,7 +34,7 @@ class CostExtensionProtocol(Protocol):
         /,
         inf: float = ...,
     ) -> np.ndarray:
-        """Return `dist` extended with sink rows/columns so a node can stay unmatched at cost `eta`."""
+        """Represent link costs plus `eta / 2` per unmatched row or column."""
 
 
 def no_cost_extension(dist: np.ndarray, eta: float, inf: float = float("inf")) -> np.ndarray:  # noqa: ARG001

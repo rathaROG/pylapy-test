@@ -5,12 +5,11 @@ The sparse backends (`scipy.sparse.csgraph.min_weight_full_bipartite_matching` a
 sparse) distance matrix into a COO matrix by:
 
 1. dropping every entry above `cost_limit` (this is what makes it sparse / applies the threshold), and
-2. adding "sink" edges so a row/column can stay unmatched at `alternative_cost` -- which also guarantees a
+2. adding "sink" edges to represent unmatched endpoints -- which also guarantees a
    feasible full matching (otherwise a row with no admissible link would break the backends).
 
-`alternative_cost` sets whether a node may be left unmatched: a finite value adds an alternative sink link
-at that cost; `inf` offers no alternative (the sink is priced very high and used only as a last resort, to
-keep the problem feasible). Links to sink nodes are stripped from the result by `LapSolver`.
+Finite `alternative_cost=eta` charges `eta / 2` per unmatched row or column. Sink layouts represent
+this objective up to a constant; `inf` disables the finite penalty. `LapSolver` removes sink links.
 
 Which one to use (see the `benchmark_sparse_extension.py` script and `DEFAULT_SPARSE_EXTENSIONS`):
 
@@ -42,8 +41,7 @@ class SparseExtensionProtocol(Protocol):
     """Callable that builds a gated COO cost matrix with alternative-cost sink edges.
 
     It receives a dense or sparse distance matrix and returns a `scipy.sparse.coo_array` holding the real
-    links (those with cost <= `cost_limit`) plus sink edges priced at `alternative_cost` (`inf` offers no
-    alternative).
+    links (cost <= `cost_limit`) and sinks representing half `alternative_cost` per unmatched endpoint.
     """
 
     __name__: str
@@ -56,7 +54,7 @@ class SparseExtensionProtocol(Protocol):
         cost_limit: float = ...,
         alternative_cost: float = ...,
     ) -> sparray:
-        """Return a COO matrix: real links (cost <= `cost_limit`) plus sink edges at `alternative_cost`."""
+        """Return admissible real links and alternative-cost sink edges."""
 
 
 def sparse_to_dense(sparse: sparray, inf: float = float("inf")) -> np.ndarray:

@@ -79,15 +79,10 @@ def achieved_cost(matrix: np.ndarray, links: np.ndarray) -> float:
 
 
 def soft_objective(dist: np.ndarray, links: np.ndarray, eta: float) -> float:
-    """Soft-threshold objective: made-link costs + ``eta`` per unmatched row and per unmatched column.
-
-    Invariant across every equivalent cost extension (they all return the same optimal "link iff
-    ``dist <= eta``" set), so it is the correctness check for the cost-extension study. Mirrors
-    ``tests/conftest.py::soft_objective``.
-    """
+    """Link costs plus ``eta / 2`` per unmatched row or column, as in ``tests/conftest.py``."""
     n, m = dist.shape
     linked = len(links)
-    return achieved_cost(dist, links) + eta * ((n - linked) + (m - linked))
+    return achieved_cost(dist, links) + eta * ((n - linked) + (m - linked)) / 2
 
 
 def time_callable(fn: Callable[[], np.ndarray], repeats: int) -> tuple[float, float, np.ndarray]:
